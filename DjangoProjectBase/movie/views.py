@@ -7,6 +7,10 @@ import matplotlib.pyplot as plt
 import matplotlib
 import io
 import urllib, base64
+from dotenv import load_dotenv, find_dotenv
+import os
+from openai import OpenAI
+import numpy as np
 
 def home(request):
     #return HttpResponse('<h1>Welcome to Home Page</h1>')
@@ -123,3 +127,34 @@ def generate_bar_chart(data, xlabel, ylabel):
     buffer.close()
     graphic = base64.b64encode(image_png).decode('utf-8')
     return graphic
+
+def recommendations(request) :
+    _ = load_dotenv('openAI.env')
+    client = OpenAI(
+        # This is the default and can be omitted
+        api_key=os.environ.get('openAI_api_key'),
+    )
+
+    movies = Movie.objects.all()
+
+    def get_embedding(text, model="text-embedding-3-small"):
+        text = text.replace("\n", " ")
+        return client.embeddings.create(input = [text], model=model).data[0].embedding
+
+    def cosine_similarity(a, b):
+        return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+
+    searchTerm = request.GET.get('searchMovie')
+    if searchTerm :
+        emb = get_embedding(searchTerm)
+
+        sim = []
+        for i in range(len(movies)):
+            movie_emb = list(np.frombuffer(movies[i].emb))
+            sim.append(cosine_similarity(emb, movie_emb))
+        sim = np.array(sim)
+        idx = int(np.argmax(sim))
+        movie = movies[idx]
+        return render(request, 'recommendations.html', {'searchTerm': searchTerm, 'movie': movie})
+
+    return render(request, 'recommendations.html', {'searchTerm': searchTerm})
